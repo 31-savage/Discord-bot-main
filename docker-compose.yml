@@ -1,0 +1,12 @@
+services:
+  discord-bot:
+    build: .
+    container_name: discord-welcome-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    # Or use environment variables directly:
+    # environment:
+    #   - DISCORD_TOKEN=your_token_here
+    #   - WELCOME_CHANNEL_ID=123456789
+    #   - LOG_LEVEL=INFO

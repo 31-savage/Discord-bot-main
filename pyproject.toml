@@ -1,0 +1,30 @@
+[project]
+name = "discord-welcome-bot"
+version = "0.1.0"
+description = "Discord self-bot that notifies when new users join a server"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "discord-py-self>=2.1.0",
+    "pydantic-settings>=2.12.0",
+]
+
+[project.scripts]
+discord-welcome-bot = "discord_welcome_bot.main:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.0",
+    "pyright>=1.1.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
+
+[tool.pyright]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"

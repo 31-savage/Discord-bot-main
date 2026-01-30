@@ -1,0 +1,10 @@
+# Ignore everything
+*
+
+# Except these files
+!.dockerignore
+!Dockerfile
+!docker-compose.yml
+!pyproject.toml
+!uv.lock
+!discord_welcome_bot/**/*.py
