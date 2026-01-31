@@ -17,10 +17,6 @@ class Settings(BaseSettings):
     # Discord user token (required)
     discord_token: str
 
-    # Channel ID to send welcome messages (optional)
-    # If not set, will look for #welcome, #general, or system channel
-    welcome_channel_id: int | None = None
-
     # Log level
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 

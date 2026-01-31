@@ -61,69 +61,27 @@ class WelcomeBot(discord.Client):
         logger.info(f"New member joined: {member} in {member.guild.name}")
 
         try:
-            channel = await self._find_welcome_channel(member.guild)
-            if channel is None:
-                logger.warning(
-                    f"No suitable welcome channel found in {member.guild.name}. "
-                    "Set WELCOME_CHANNEL_ID or create a channel named 'welcome' or 'general'."
-                )
+            # Send DM to myself (bot account) with user info
+            if self.user is None:
+                logger.error("Bot user is None, cannot send DM")
                 return
 
-            embed = self._create_welcome_embed(member)
-            await channel.send(embed=embed)
-            logger.debug(f"Welcome message sent for {member} in #{channel.name}")
+            embed = self._create_join_notification_embed(member)
+            await self.user.send(embed=embed)
+            logger.debug(f"Join notification sent to self for {member}")
         except discord.Forbidden:
-            logger.error(f"Missing permissions to send message in {member.guild.name}")
+            logger.error("Cannot send DM to self")
         except Exception as e:
-            logger.error(f"Error sending welcome message: {e}")
+            logger.error(f"Error sending join notification: {e}")
 
-    async def _find_welcome_channel(
-        self, guild: discord.Guild
-    ) -> discord.TextChannel | None:
-        """Find the appropriate channel to send welcome messages.
-
-        Priority order:
-        1. Configured WELCOME_CHANNEL_ID
-        2. Channel named "welcome"
-        3. Channel named "general"
-        4. System channel (where Discord sends default messages)
-
-        Args:
-            guild: The guild to search for a welcome channel.
-
-        Returns:
-            The text channel to use, or None if not found.
-        """
-        # Priority 1: Use configured channel ID
-        if settings.welcome_channel_id:
-            channel = guild.get_channel(settings.welcome_channel_id)
-            if isinstance(channel, discord.TextChannel):
-                return channel
-
-        # Priority 2: Find channel named "welcome"
-        for channel in guild.text_channels:
-            if channel.name.lower() == "welcome":
-                return channel
-
-        # Priority 3: Find channel named "general"
-        for channel in guild.text_channels:
-            if channel.name.lower() == "general":
-                return channel
-
-        # Priority 4: Use system channel
-        if guild.system_channel is not None:
-            return guild.system_channel
-
-        return None
-
-    def _create_welcome_embed(self, member: discord.Member) -> discord.Embed:
-        """Create a welcome embed for a new member.
+    def _create_join_notification_embed(self, member: discord.Member) -> discord.Embed:
+        """Create a notification embed with user info for a new member.
 
         Args:
             member: The member that joined.
 
         Returns:
-            The welcome embed.
+            The notification embed with user details.
         """
         guild = member.guild
         member_count = guild.member_count or len(guild.members)
@@ -134,12 +92,9 @@ class WelcomeBot(discord.Client):
         account_age = now - account_created
 
         embed = discord.Embed(
-            title="Welcome to the Server!",
-            description=(
-                f"Hey {member.mention}, welcome to **{guild.name}**!\n\n"
-                f"You are member #{member_count}. We're glad to have you here!"
-            ),
-            color=discord.Color.blurple(),
+            title="🔔 New Member Joined",
+            description=f"A new user has joined **{guild.name}**",
+            color=discord.Color.green(),
             timestamp=now,
         )
 
@@ -149,28 +104,35 @@ class WelcomeBot(discord.Client):
         elif member.default_avatar:
             embed.set_thumbnail(url=member.default_avatar.url)
 
-        # Add fields
+        # User info fields
         embed.add_field(name="Username", value=str(member), inline=True)
+        embed.add_field(name="User ID", value=str(member.id), inline=True)
+        embed.add_field(name="Mention", value=member.mention, inline=True)
+        embed.add_field(name="Server", value=guild.name, inline=True)
         embed.add_field(name="Member #", value=str(member_count), inline=True)
         embed.add_field(
             name="Account Created",
-            value=f"<t:{int(account_created.timestamp())}:R>",
+            value=f"<t:{int(account_created.timestamp())}:F>\n(<t:{int(account_created.timestamp())}:R>)",
             inline=True,
         )
+
+        # Account age info
+        age_str = f"{account_age.days} days, {account_age.seconds // 3600} hours"
+        embed.add_field(name="Account Age", value=age_str, inline=True)
 
         # Add account age warning for very new accounts (< 7 days)
         if account_age.days < 7:
             embed.add_field(
-                name="New Account",
-                value=f"Account is only {account_age.days} day(s) old",
+                name="⚠️ Warning",
+                value=f"New account - only {account_age.days} day(s) old!",
                 inline=False,
             )
 
         # Set footer with guild info
         if guild.icon:
-            embed.set_footer(text=guild.name, icon_url=guild.icon.url)
+            embed.set_footer(text=f"Server ID: {guild.id}", icon_url=guild.icon.url)
         else:
-            embed.set_footer(text=guild.name)
+            embed.set_footer(text=f"Server ID: {guild.id}")
 
         return embed
 
