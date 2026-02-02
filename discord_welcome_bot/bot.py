@@ -134,7 +134,8 @@ class WelcomeBot(commands.Bot):
                 return
 
             embed = self._create_join_notification_embed(member)
-            await self._notification_channel.send(embed=embed)
+            # discord.py-self uses embeds=[list] not embed=single
+            await self._notification_channel.send(embeds=[embed])
             logger.debug(f"Join notification sent for {member}")
         except discord.Forbidden:
             logger.error("Cannot send to notification channel - forbidden")
@@ -206,16 +207,32 @@ class WelcomeBot(commands.Bot):
                 embed.add_field(name="Members", value=str(guild.member_count), inline=True)
                 if guild.icon:
                     embed.set_thumbnail(url=guild.icon.url)
-                await self._notification_channel.send(embed=embed)
+                await self._notification_channel.send(embeds=[embed])
             except Exception as e:
                 logger.error(f"Failed to send guild join notification: {e}")
 
+    async def on_command_error(
+        self,
+        ctx: commands.Context,
+        error: commands.CommandError,  # type: ignore
+    ) -> None:
+        """Handle command errors."""
+        if isinstance(error, commands.CommandNotFound):
+            return  # Ignore unknown commands
+        elif isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(f"Missing argument: {error.param.name}")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send(f"Bad argument: {error}")
+        else:
+            logger.error(f"Command error: {error}")
+
 
 # ============ Commands ============
+# Using plain text responses instead of embeds for better compatibility
 
 
 @commands.command(name="servers")
-async def cmd_servers(ctx: commands.Context) -> None:
+async def cmd_servers(ctx: commands.Context) -> None:  # type: ignore
     """List all servers the bot is in."""
     bot: WelcomeBot = ctx.bot  # type: ignore
 
@@ -223,37 +240,30 @@ async def cmd_servers(ctx: commands.Context) -> None:
         await ctx.send("Not in any servers.")
         return
 
-    embed = discord.Embed(
-        title="Server List",
-        description=f"Connected to {len(bot.guilds)} server(s)",
-        color=discord.Color.blue(),
-    )
+    lines = [f"**Server List** - Connected to {len(bot.guilds)} server(s)\n"]
 
     for i, guild in enumerate(bot.guilds, 1):
         monitored = "Yes" if bot.is_guild_monitored(guild.id) else "No"
-        # Only show first 25 due to embed limits
-        if i <= 25:
-            embed.add_field(
-                name=f"{i}. {guild.name}",
-                value=f"ID: `{guild.id}`\nMembers: {guild.member_count}\nMonitored: {monitored}",
-                inline=True,
-            )
+        lines.append(
+            f"{i}. **{guild.name}** | ID: `{guild.id}` | Members: {guild.member_count} | Monitored: {monitored}"
+        )
 
-    if len(bot.guilds) > 25:
-        embed.set_footer(text=f"Showing 25 of {len(bot.guilds)} servers")
+    message = "\n".join(lines)
+    # Split into chunks if too long
+    if len(message) > 2000:
+        message = message[:1997] + "..."
 
-    await ctx.send(embed=embed)
+    await ctx.send(message)
 
 
 @commands.command(name="monitor")
-async def cmd_monitor(ctx: commands.Context, guild_id: int) -> None:
+async def cmd_monitor(ctx: commands.Context, guild_id: int) -> None:  # type: ignore
     """Add a server to the monitored list.
 
     Usage: !monitor <guild_id>
     """
     bot: WelcomeBot = ctx.bot  # type: ignore
 
-    # Check if guild exists
     guild = bot.get_guild(guild_id)
     if guild is None:
         await ctx.send(
@@ -266,7 +276,7 @@ async def cmd_monitor(ctx: commands.Context, guild_id: int) -> None:
 
 
 @commands.command(name="unmonitor")
-async def cmd_unmonitor(ctx: commands.Context, guild_id: int) -> None:
+async def cmd_unmonitor(ctx: commands.Context, guild_id: int) -> None:  # type: ignore
     """Remove a server from the monitored list.
 
     Usage: !unmonitor <guild_id>
@@ -281,7 +291,7 @@ async def cmd_unmonitor(ctx: commands.Context, guild_id: int) -> None:
 
 
 @commands.command(name="monitored")
-async def cmd_monitored(ctx: commands.Context) -> None:
+async def cmd_monitored(ctx: commands.Context) -> None:  # type: ignore
     """List all monitored servers."""
     bot: WelcomeBot = ctx.bot  # type: ignore
 
@@ -289,22 +299,18 @@ async def cmd_monitored(ctx: commands.Context) -> None:
         await ctx.send("No specific servers configured. **Monitoring ALL servers.**")
         return
 
-    embed = discord.Embed(
-        title="Monitored Servers",
-        description=f"Monitoring {len(bot.monitored_guilds)} server(s)",
-        color=discord.Color.green(),
-    )
+    lines = [f"**Monitored Servers** - {len(bot.monitored_guilds)} server(s)\n"]
 
     for guild_id in bot.monitored_guilds:
         guild = bot.get_guild(guild_id)
         name = guild.name if guild else "Unknown (left server?)"
-        embed.add_field(name=name, value=f"ID: `{guild_id}`", inline=True)
+        lines.append(f"- **{name}** | ID: `{guild_id}`")
 
-    await ctx.send(embed=embed)
+    await ctx.send("\n".join(lines))
 
 
 @commands.command(name="clear")
-async def cmd_clear(ctx: commands.Context) -> None:
+async def cmd_clear(ctx: commands.Context) -> None:  # type: ignore
     """Clear monitored list (will monitor ALL servers)."""
     bot: WelcomeBot = ctx.bot  # type: ignore
     bot.clear_monitored_guilds()
@@ -312,46 +318,19 @@ async def cmd_clear(ctx: commands.Context) -> None:
 
 
 @commands.command(name="whelp")
-async def cmd_help_welcome(ctx: commands.Context) -> None:
+async def cmd_help_welcome(ctx: commands.Context) -> None:  # type: ignore
     """Show help for welcome bot commands."""
     prefix = settings.command_prefix
 
-    embed = discord.Embed(
-        title="Welcome Bot Commands",
-        color=discord.Color.blue(),
-    )
+    help_text = f"""**Welcome Bot Commands**
 
-    embed.add_field(
-        name=f"{prefix}servers",
-        value="List all servers the bot is in",
-        inline=False,
-    )
-    embed.add_field(
-        name=f"{prefix}monitor <guild_id>",
-        value="Add a server to the monitored list",
-        inline=False,
-    )
-    embed.add_field(
-        name=f"{prefix}unmonitor <guild_id>",
-        value="Remove a server from the monitored list",
-        inline=False,
-    )
-    embed.add_field(
-        name=f"{prefix}monitored",
-        value="List all monitored servers",
-        inline=False,
-    )
-    embed.add_field(
-        name=f"{prefix}clear",
-        value="Clear monitored list (monitor ALL servers)",
-        inline=False,
-    )
-    embed.add_field(
-        name=f"{prefix}whelp",
-        value="Show this help message",
-        inline=False,
-    )
+`{prefix}servers` - List all servers the bot is in
+`{prefix}monitor <guild_id>` - Add a server to the monitored list
+`{prefix}unmonitor <guild_id>` - Remove a server from the monitored list
+`{prefix}monitored` - List all monitored servers
+`{prefix}clear` - Clear monitored list (monitor ALL servers)
+`{prefix}whelp` - Show this help message
 
-    embed.set_footer(text="If no servers are monitored, ALL servers are monitored by default.")
+_If no servers are monitored, ALL servers are monitored by default._"""
 
-    await ctx.send(embed=embed)
+    await ctx.send(help_text)
