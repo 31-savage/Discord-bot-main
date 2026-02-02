@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 import discord
 from discord.ext import commands
@@ -11,63 +12,34 @@ from discord_welcome_bot.config import settings
 
 logger = logging.getLogger(__name__)
 
-# File to persist monitored guilds (uses configurable data directory)
-DATA_FILE = settings.data_dir / "monitored_guilds.json"
-CONFIG_FILE = settings.data_dir / "config.json"
+# File to persist all bot config (uses configurable data directory)
+CONFIG_FILE = settings.data_dir / "bot_config.json"
 
 
-def load_monitored_guilds() -> set[int]:
-    """Load monitored guild IDs from file."""
-    if DATA_FILE.exists():
-        try:
-            with open(DATA_FILE) as f:
-                data = json.load(f)
-                return set(data.get("guild_ids", []))
-        except Exception as e:
-            logger.error(f"Failed to load monitored guilds: {e}")
-    return set()
-
-
-def save_monitored_guilds(guild_ids: set[int]) -> None:
-    """Save monitored guild IDs to file."""
-    try:
-        # Ensure the data directory exists
-        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(DATA_FILE, "w") as f:
-            json.dump({"guild_ids": list(guild_ids)}, f)
-        logger.debug(f"Saved monitored guilds to {DATA_FILE}")
-    except Exception as e:
-        logger.error(f"Failed to save monitored guilds: {e}")
-
-
-def load_monitor_all_setting() -> bool:
-    """Load the monitor_all setting from config file."""
+def load_config() -> dict[str, Any]:
+    """Load all config from file."""
+    logger.info(f"Loading config from {CONFIG_FILE.absolute()}")
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE) as f:
                 data = json.load(f)
-                return data.get("monitor_all", False)
+                logger.info(f"Loaded config: {data}")
+                return data
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
-    return False
+    else:
+        logger.info("Config file does not exist, using defaults")
+    return {}
 
 
-def save_monitor_all_setting(enabled: bool) -> None:
-    """Save the monitor_all setting to config file."""
+def save_config(config: dict[str, Any]) -> None:
+    """Save all config to file."""
     try:
-        # Load existing config or create new
-        config = {}
-        if CONFIG_FILE.exists():
-            with open(CONFIG_FILE) as f:
-                config = json.load(f)
-
-        config["monitor_all"] = enabled
-
         # Ensure the data directory exists
         CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(CONFIG_FILE, "w") as f:
-            json.dump(config, f)
-        logger.debug(f"Saved config to {CONFIG_FILE}")
+            json.dump(config, f, indent=2)
+        logger.info(f"Saved config to {CONFIG_FILE.absolute()}: {config}")
     except Exception as e:
         logger.error(f"Failed to save config: {e}")
 
@@ -76,8 +48,14 @@ class WelcomeBot(commands.Bot):
     """Discord self-bot that sends welcome messages when users join."""
 
     def __init__(self) -> None:
+        # Load config first
+        self._config = load_config()
+
+        # Get prefix from config or fall back to env/default
+        prefix = self._config.get("prefix", settings.command_prefix)
+
         super().__init__(
-            command_prefix=settings.command_prefix,
+            command_prefix=prefix,
             self_bot=True,
             # Subscribe to guild events automatically for guilds < 75k members
             guild_subscriptions=True,
@@ -85,8 +63,21 @@ class WelcomeBot(commands.Bot):
             chunk_guilds_at_startup=True,
         )
         self._notification_channel: discord.GroupChannel | discord.TextChannel | None = None
-        self._monitored_guilds: set[int] = load_monitored_guilds()
-        self._monitor_all: bool = load_monitor_all_setting()
+
+        # Load settings from config file (with env var fallbacks)
+        self._monitored_guilds: set[int] = set(self._config.get("monitored_guilds", []))
+        self._monitor_all: bool = self._config.get("monitor_all", False)
+        self._notification_channel_id: int = self._config.get(
+            "notification_channel_id", settings.notification_channel_id
+        )
+
+    def _save_config(self) -> None:
+        """Save current config to file."""
+        self._config["monitored_guilds"] = list(self._monitored_guilds)
+        self._config["monitor_all"] = self._monitor_all
+        self._config["notification_channel_id"] = self._notification_channel_id
+        self._config["prefix"] = self.command_prefix
+        save_config(self._config)
 
     @property
     def monitored_guilds(self) -> set[int]:
@@ -97,6 +88,11 @@ class WelcomeBot(commands.Bot):
     def monitor_all(self) -> bool:
         """Check if monitoring all servers."""
         return self._monitor_all
+
+    @property
+    def notification_channel_id(self) -> int:
+        """Get the notification channel ID."""
+        return self._notification_channel_id
 
     def is_guild_monitored(self, guild_id: int) -> bool:
         """Check if a guild is being monitored.
@@ -111,24 +107,33 @@ class WelcomeBot(commands.Bot):
     def add_monitored_guild(self, guild_id: int) -> None:
         """Add a guild to the monitored list."""
         self._monitored_guilds.add(guild_id)
-        save_monitored_guilds(self._monitored_guilds)
+        self._save_config()
 
     def remove_monitored_guild(self, guild_id: int) -> None:
         """Remove a guild from the monitored list."""
         self._monitored_guilds.discard(guild_id)
-        save_monitored_guilds(self._monitored_guilds)
+        self._save_config()
 
     def clear_monitored_guilds(self) -> None:
         """Clear all monitored guilds and disable monitor all."""
         self._monitored_guilds.clear()
         self._monitor_all = False
-        save_monitored_guilds(self._monitored_guilds)
-        save_monitor_all_setting(self._monitor_all)
+        self._save_config()
 
     def set_monitor_all(self, enabled: bool) -> None:
         """Enable or disable monitoring all servers."""
         self._monitor_all = enabled
-        save_monitor_all_setting(enabled)
+        self._save_config()
+
+    def set_notification_channel_id(self, channel_id: int) -> None:
+        """Set the notification channel ID."""
+        self._notification_channel_id = channel_id
+        self._save_config()
+
+    def set_prefix(self, prefix: str) -> None:
+        """Set the command prefix."""
+        self.command_prefix = prefix
+        self._save_config()
 
     async def setup_hook(self) -> None:
         """Called when the bot is starting up."""
@@ -150,19 +155,11 @@ class WelcomeBot(commands.Bot):
 
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         logger.info(f"Connected to {len(self.guilds)} guild(s)")
+        logger.info(f"Data directory: {settings.data_dir.absolute()}")
+        logger.info(f"Config file: {CONFIG_FILE.absolute()}")
 
         # Get notification channel
-        try:
-            channel = await self.fetch_channel(settings.notification_channel_id)
-            if isinstance(channel, (discord.GroupChannel, discord.TextChannel, discord.DMChannel)):
-                self._notification_channel = channel  # type: ignore
-                logger.info(f"Notification channel set: {channel}")
-            else:
-                logger.error(
-                    f"Channel {settings.notification_channel_id} is not a valid text channel"
-                )
-        except Exception as e:
-            logger.error(f"Failed to fetch notification channel: {e}")
+        await self._setup_notification_channel()
 
         # Log monitoring status
         if self._monitor_all:
@@ -171,6 +168,22 @@ class WelcomeBot(commands.Bot):
             logger.info(f"Monitoring {len(self._monitored_guilds)} specific guild(s)")
         else:
             logger.info("Not monitoring any guilds (use !monitor <guild_id> or !monitorall)")
+
+    async def _setup_notification_channel(self) -> None:
+        """Setup the notification channel."""
+        try:
+            channel = await self.fetch_channel(self._notification_channel_id)
+            if isinstance(channel, (discord.GroupChannel, discord.TextChannel, discord.DMChannel)):
+                self._notification_channel = channel  # type: ignore
+                logger.info(
+                    f"Notification channel set: {channel} (ID: {self._notification_channel_id})"
+                )
+            else:
+                logger.error(f"Channel {self._notification_channel_id} is not a valid text channel")
+        except Exception as e:
+            logger.error(
+                f"Failed to fetch notification channel {self._notification_channel_id}: {e}"
+            )
 
     async def on_member_join(self, member: discord.Member) -> None:
         """Called when a member joins a guild."""
@@ -294,7 +307,7 @@ async def cmd_monitor(ctx: commands.Context, guild_id: int) -> None:  # type: ig
     guild = bot.get_guild(guild_id)
     if guild is None:
         await ctx.send(
-            f"Server with ID `{guild_id}` not found. Use `{settings.command_prefix}servers` to see available servers."
+            f"Server with ID `{guild_id}` not found. Use `{bot.command_prefix}servers` to see available servers."
         )
         return
 
@@ -359,33 +372,93 @@ async def cmd_monitorall(ctx: commands.Context) -> None:  # type: ignore
 
 
 @commands.command(name="config")
-async def cmd_config(ctx: commands.Context) -> None:  # type: ignore
-    """Show current configuration."""
+async def cmd_config(
+    ctx: commands.Context, action: str = None, key: str = None, *, value: str = None
+) -> None:  # type: ignore
+    """Show or set configuration.
+
+    Usage:
+        !config - Show current config
+        !config set prefix /
+        !config set channel 123456789
+    """
     bot: WelcomeBot = ctx.bot  # type: ignore
 
-    monitor_status = (
-        f"**ALL servers** ({len(bot.guilds)})"
-        if bot.monitor_all
-        else f"**{len(bot.monitored_guilds)} specific server(s)**"
-        if bot.monitored_guilds
-        else "**Nothing**"
-    )
+    # If no action, show current config
+    if action is None:
+        monitor_status = (
+            f"**ALL servers** ({len(bot.guilds)})"
+            if bot.monitor_all
+            else f"**{len(bot.monitored_guilds)} specific server(s)**"
+            if bot.monitored_guilds
+            else "**Nothing**"
+        )
 
-    config_text = f"""**Current Configuration**
+        config_text = f"""**Current Configuration**
 
 **Monitoring:** {monitor_status}
-**Command Prefix:** `{settings.command_prefix}`
-**Notification Channel:** `{settings.notification_channel_id}`
-**Data Directory:** `{settings.data_dir}`
-**Connected Servers:** {len(bot.guilds)}"""
+**Command Prefix:** `{bot.command_prefix}`
+**Notification Channel:** `{bot.notification_channel_id}`
+**Data Directory:** `{settings.data_dir.absolute()}`
+**Config File:** `{CONFIG_FILE.absolute()}`
+**Connected Servers:** {len(bot.guilds)}
 
-    await ctx.send(config_text)
+**To change settings:**
+`{bot.command_prefix}config set prefix <new_prefix>`
+`{bot.command_prefix}config set channel <channel_id>`"""
+
+        await ctx.send(config_text)
+        return
+
+    # Handle "set" action
+    if action.lower() == "set":
+        if key is None or value is None:
+            await ctx.send(
+                f"Usage: `{bot.command_prefix}config set <key> <value>`\nKeys: `prefix`, `channel`"
+            )
+            return
+
+        key = key.lower()
+
+        if key == "prefix":
+            old_prefix = bot.command_prefix
+            bot.set_prefix(value)
+            await ctx.send(
+                f"Prefix changed from `{old_prefix}` to `{value}`\nUse `{value}config` for future commands."
+            )
+
+        elif key == "channel":
+            try:
+                channel_id = int(value)
+                old_channel = bot.notification_channel_id
+                bot.set_notification_channel_id(channel_id)
+                # Try to fetch the new channel
+                await bot._setup_notification_channel()
+                if bot._notification_channel:
+                    await ctx.send(
+                        f"Notification channel changed from `{old_channel}` to `{channel_id}`"
+                    )
+                else:
+                    await ctx.send(
+                        f"Channel ID set to `{channel_id}` but could not fetch channel. Please verify the ID."
+                    )
+            except ValueError:
+                await ctx.send(f"Invalid channel ID: `{value}`. Must be a number.")
+
+        else:
+            await ctx.send(f"Unknown config key: `{key}`\nAvailable keys: `prefix`, `channel`")
+
+    else:
+        await ctx.send(
+            f"Unknown action: `{action}`\nUse `{bot.command_prefix}config` to view or `{bot.command_prefix}config set <key> <value>` to change."
+        )
 
 
 @commands.command(name="whelp")
 async def cmd_help_welcome(ctx: commands.Context) -> None:  # type: ignore
     """Show help for welcome bot commands."""
-    prefix = settings.command_prefix
+    bot: WelcomeBot = ctx.bot  # type: ignore
+    prefix = bot.command_prefix
 
     help_text = f"""**Welcome Bot Commands**
 
@@ -397,8 +470,12 @@ async def cmd_help_welcome(ctx: commands.Context) -> None:  # type: ignore
 `{prefix}monitored` - List currently monitored servers
 `{prefix}clear` - Stop monitoring everything
 
-**Info:**
+**Configuration:**
 `{prefix}config` - Show current configuration
+`{prefix}config set prefix <new_prefix>` - Change command prefix
+`{prefix}config set channel <channel_id>` - Change notification channel
+
+**Help:**
 `{prefix}whelp` - Show this help message
 
 _By default, no servers are monitored. Use `{prefix}monitor` or `{prefix}monitorall` to start._"""
