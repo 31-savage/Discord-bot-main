@@ -60,10 +60,9 @@ class WelcomeBot(commands.Bot):
     def is_guild_monitored(self, guild_id: int) -> bool:
         """Check if a guild is being monitored.
 
-        If no guilds are configured, monitor ALL guilds.
+        Only monitors guilds that are explicitly added.
+        If no guilds are configured, nothing is monitored.
         """
-        if not self._monitored_guilds:
-            return True  # Monitor all if none specified
         return guild_id in self._monitored_guilds
 
     def add_monitored_guild(self, guild_id: int) -> None:
@@ -77,7 +76,7 @@ class WelcomeBot(commands.Bot):
         save_monitored_guilds(self._monitored_guilds)
 
     def clear_monitored_guilds(self) -> None:
-        """Clear all monitored guilds (will monitor all)."""
+        """Clear all monitored guilds (will monitor nothing)."""
         self._monitored_guilds.clear()
         save_monitored_guilds(self._monitored_guilds)
 
@@ -117,7 +116,7 @@ class WelcomeBot(commands.Bot):
         if self._monitored_guilds:
             logger.info(f"Monitoring {len(self._monitored_guilds)} specific guild(s)")
         else:
-            logger.info("Monitoring ALL guilds (no specific guilds configured)")
+            logger.info("Not monitoring any guilds (use !monitor <guild_id> to add)")
 
     async def on_member_join(self, member: discord.Member) -> None:
         """Called when a member joins a guild."""
@@ -296,7 +295,9 @@ async def cmd_monitored(ctx: commands.Context) -> None:  # type: ignore
     bot: WelcomeBot = ctx.bot  # type: ignore
 
     if not bot.monitored_guilds:
-        await ctx.send("No specific servers configured. **Monitoring ALL servers.**")
+        await ctx.send(
+            "No servers configured. **Monitoring nothing.** Use `!monitor <guild_id>` to add servers."
+        )
         return
 
     lines = [f"**Monitored Servers** - {len(bot.monitored_guilds)} server(s)\n"]
@@ -311,10 +312,10 @@ async def cmd_monitored(ctx: commands.Context) -> None:  # type: ignore
 
 @commands.command(name="clear")
 async def cmd_clear(ctx: commands.Context) -> None:  # type: ignore
-    """Clear monitored list (will monitor ALL servers)."""
+    """Clear monitored list (will monitor nothing)."""
     bot: WelcomeBot = ctx.bot  # type: ignore
     bot.clear_monitored_guilds()
-    await ctx.send("Cleared monitored list. Now monitoring **ALL servers**.")
+    await ctx.send("Cleared monitored list. **Now monitoring nothing.**")
 
 
 @commands.command(name="whelp")
@@ -328,9 +329,9 @@ async def cmd_help_welcome(ctx: commands.Context) -> None:  # type: ignore
 `{prefix}monitor <guild_id>` - Add a server to the monitored list
 `{prefix}unmonitor <guild_id>` - Remove a server from the monitored list
 `{prefix}monitored` - List all monitored servers
-`{prefix}clear` - Clear monitored list (monitor ALL servers)
+`{prefix}clear` - Clear monitored list (monitor nothing)
 `{prefix}whelp` - Show this help message
 
-_If no servers are monitored, ALL servers are monitored by default._"""
+_By default, no servers are monitored. Use `{prefix}monitor` to add servers._"""
 
     await ctx.send(help_text)
