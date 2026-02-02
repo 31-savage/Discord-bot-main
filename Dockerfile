@@ -33,14 +33,16 @@ COPY --from=builder /app/.venv /app/.venv
 # Copy the source code
 COPY --from=builder /app/discord_welcome_bot ./discord_welcome_bot
 
+# Create data directory for persistence (monitored guilds)
+RUN mkdir -p /app/data && chown -R appuser:appgroup /app
+
 # Set environment variables
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Change ownership to non-root user
-RUN chown -R appuser:appgroup /app
-
 USER appuser
+
+WORKDIR /app/data
 
 CMD ["python", "-m", "discord_welcome_bot.main"]

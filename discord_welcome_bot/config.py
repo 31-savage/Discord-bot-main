@@ -17,12 +17,15 @@ class Settings(BaseSettings):
     # Discord user token (required)
     discord_token: str
 
+    # Group DM channel ID for notifications (required)
+    # Create a group DM and get its ID
+    notification_channel_id: int
+
     # Log level
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
-    # Whether to subscribe to member events for large guilds (>75k members)
-    # See: https://discordpy-self.readthedocs.io/en/latest/guild_subscriptions.html
-    subscribe_to_member_events: bool = True
+    # Command prefix for text commands
+    command_prefix: str = "!"
 
 
 settings = Settings()  # type: ignore[call-arg]

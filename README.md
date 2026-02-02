@@ -1,26 +1,39 @@
 # Discord Welcome Self-Bot
 
-A Discord self-bot using [discord.py-self](https://github.com/dolfies/discord.py-self) that sends welcome messages when new users join your servers.
+A Discord self-bot using [discord.py-self](https://github.com/dolfies/discord.py-self) that notifies you when new users join servers you're monitoring.
 
 > **Warning**: Self-bots are against Discord's Terms of Service. Use at your own risk.
 
 ## Features
 
-- Sends an embed message when a new member joins any server you're in
+- Sends notifications to a group DM when members join monitored servers
 - Shows member count, username, avatar, and account age
 - Warns about new accounts (< 7 days old)
-- Configurable welcome channel (or auto-detects `#welcome`, `#general`, or system channel)
-- Subscribes to guild member events automatically (required for large servers)
+- **Commands** to manage which servers to monitor
+- By default monitors ALL servers (or specific ones you configure)
 - Docker support for easy deployment
-- Graceful shutdown handling
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `!servers` | List all servers the bot is in |
+| `!monitor <guild_id>` | Add a server to the monitored list |
+| `!unmonitor <guild_id>` | Remove a server from the monitored list |
+| `!monitored` | List all monitored servers |
+| `!clear` | Clear monitored list (monitor ALL servers) |
+| `!whelp` | Show help for all commands |
 
 ## Prerequisites
 
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
 - Your Discord user token
+- A Group DM channel ID for notifications
 
-## Getting Your Discord Token
+## Setup
+
+### 1. Get Your Discord Token
 
 1. Open Discord in your browser (not the desktop app)
 2. Press `F12` to open Developer Tools
@@ -29,7 +42,13 @@ A Discord self-bot using [discord.py-self](https://github.com/dolfies/discord.py
 5. Look for a request to `messages` and click it
 6. In the "Headers" tab, find the `Authorization` header - that's your token
 
-## Installation
+### 2. Create a Group DM & Get Channel ID
+
+1. Create a group DM with at least one other person (you can remove them later or use an alt)
+2. Enable Developer Mode: User Settings > App Settings > Advanced > Developer Mode
+3. Right-click the group DM and select "Copy Channel ID"
+
+### 3. Installation
 
 ```bash
 # Clone the repository
@@ -42,7 +61,7 @@ uv sync
 # Copy environment file
 cp .env.example .env
 
-# Edit .env and add your Discord token
+# Edit .env and add your token and channel ID
 ```
 
 ## Configuration
@@ -50,9 +69,9 @@ cp .env.example .env
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DISCORD_TOKEN` | Yes | Your Discord user token |
-| `WELCOME_CHANNEL_ID` | No | Specific channel ID for welcome messages |
+| `NOTIFICATION_CHANNEL_ID` | Yes | Group DM channel ID for notifications |
 | `LOG_LEVEL` | No | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`) |
-| `SUBSCRIBE_TO_MEMBER_EVENTS` | No | Subscribe to member events for guilds (default: `true`) |
+| `COMMAND_PREFIX` | No | Prefix for commands (default: `!`) |
 
 ## Running Locally
 
@@ -62,7 +81,6 @@ uv run python -m discord_welcome_bot.main
 
 # Or activate the virtual environment first
 source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate   # Windows
 python -m discord_welcome_bot.main
 ```
 
@@ -71,9 +89,9 @@ python -m discord_welcome_bot.main
 ### Using Docker Compose (Recommended)
 
 ```bash
-# Create .env file with your token
+# Create .env file
 cp .env.example .env
-# Edit .env and add your DISCORD_TOKEN
+# Edit .env with your DISCORD_TOKEN and NOTIFICATION_CHANNEL_ID
 
 # Build and run
 docker compose up -d
@@ -96,6 +114,7 @@ docker run -d \
   --name discord-welcome-bot \
   --restart unless-stopped \
   -e DISCORD_TOKEN=your_token_here \
+  -e NOTIFICATION_CHANNEL_ID=your_channel_id \
   discord-welcome-bot
 ```
 
@@ -104,25 +123,18 @@ docker run -d \
 ### Railway
 
 1. Connect your GitHub repository
-2. Add environment variable `DISCORD_TOKEN`
+2. Add environment variables:
+   - `DISCORD_TOKEN`
+   - `NOTIFICATION_CHANNEL_ID`
 3. Deploy
 
 ### Fly.io
 
 ```bash
-# Install flyctl and login
 fly launch
-fly secrets set DISCORD_TOKEN=your_token_here
+fly secrets set DISCORD_TOKEN=your_token_here NOTIFICATION_CHANNEL_ID=your_channel_id
 fly deploy
 ```
-
-### Render
-
-1. Create a new "Background Worker"
-2. Connect your repository
-3. Set build command: `pip install uv && uv sync`
-4. Set start command: `uv run python -m discord_welcome_bot.main`
-5. Add environment variable `DISCORD_TOKEN`
 
 ## Project Structure
 
@@ -130,7 +142,7 @@ fly deploy
 .
 ├── discord_welcome_bot/
 │   ├── __init__.py      # Package init
-│   ├── bot.py           # Main bot class with event handlers
+│   ├── bot.py           # Bot class with events and commands
 │   ├── config.py        # Pydantic settings configuration
 │   └── main.py          # Entry point
 ├── Dockerfile           # Multi-stage Docker build with uv
@@ -140,11 +152,13 @@ fly deploy
 └── README.md
 ```
 
-## Guild Subscriptions
+## How It Works
 
-For receiving `on_member_join` events, especially in larger guilds, the bot subscribes to member events. This is handled automatically but can be disabled via `SUBSCRIBE_TO_MEMBER_EVENTS=false`.
-
-See the [discord.py-self documentation on guild subscriptions](https://discordpy-self.readthedocs.io/en/latest/guild_subscriptions.html) for more details.
+1. Bot connects to Discord using your user token
+2. Notifications are sent to your configured group DM
+3. By default, ALL servers are monitored
+4. Use `!monitor` and `!unmonitor` commands to control which servers to watch
+5. Monitored server list is persisted to `monitored_guilds.json`
 
 ## Development
 
