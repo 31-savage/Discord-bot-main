@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 # File to persist monitored guilds (uses configurable data directory)
 DATA_FILE = settings.data_dir / "monitored_guilds.json"
+CONFIG_FILE = settings.data_dir / "config.json"
 
 
 def load_monitored_guilds() -> set[int]:
@@ -39,6 +40,38 @@ def save_monitored_guilds(guild_ids: set[int]) -> None:
         logger.error(f"Failed to save monitored guilds: {e}")
 
 
+def load_monitor_all_setting() -> bool:
+    """Load the monitor_all setting from config file."""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE) as f:
+                data = json.load(f)
+                return data.get("monitor_all", False)
+        except Exception as e:
+            logger.error(f"Failed to load config: {e}")
+    return False
+
+
+def save_monitor_all_setting(enabled: bool) -> None:
+    """Save the monitor_all setting to config file."""
+    try:
+        # Load existing config or create new
+        config = {}
+        if CONFIG_FILE.exists():
+            with open(CONFIG_FILE) as f:
+                config = json.load(f)
+
+        config["monitor_all"] = enabled
+
+        # Ensure the data directory exists
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f)
+        logger.debug(f"Saved config to {CONFIG_FILE}")
+    except Exception as e:
+        logger.error(f"Failed to save config: {e}")
+
+
 class WelcomeBot(commands.Bot):
     """Discord self-bot that sends welcome messages when users join."""
 
@@ -53,18 +86,26 @@ class WelcomeBot(commands.Bot):
         )
         self._notification_channel: discord.GroupChannel | discord.TextChannel | None = None
         self._monitored_guilds: set[int] = load_monitored_guilds()
+        self._monitor_all: bool = load_monitor_all_setting()
 
     @property
     def monitored_guilds(self) -> set[int]:
         """Get the set of monitored guild IDs."""
         return self._monitored_guilds
 
+    @property
+    def monitor_all(self) -> bool:
+        """Check if monitoring all servers."""
+        return self._monitor_all
+
     def is_guild_monitored(self, guild_id: int) -> bool:
         """Check if a guild is being monitored.
 
-        Only monitors guilds that are explicitly added.
-        If no guilds are configured, nothing is monitored.
+        If monitor_all is True, all guilds are monitored.
+        Otherwise, only guilds in the monitored list are monitored.
         """
+        if self._monitor_all:
+            return True
         return guild_id in self._monitored_guilds
 
     def add_monitored_guild(self, guild_id: int) -> None:
@@ -78,9 +119,16 @@ class WelcomeBot(commands.Bot):
         save_monitored_guilds(self._monitored_guilds)
 
     def clear_monitored_guilds(self) -> None:
-        """Clear all monitored guilds (will monitor nothing)."""
+        """Clear all monitored guilds and disable monitor all."""
         self._monitored_guilds.clear()
+        self._monitor_all = False
         save_monitored_guilds(self._monitored_guilds)
+        save_monitor_all_setting(self._monitor_all)
+
+    def set_monitor_all(self, enabled: bool) -> None:
+        """Enable or disable monitoring all servers."""
+        self._monitor_all = enabled
+        save_monitor_all_setting(enabled)
 
     async def setup_hook(self) -> None:
         """Called when the bot is starting up."""
@@ -89,7 +137,9 @@ class WelcomeBot(commands.Bot):
         self.add_command(cmd_monitor)
         self.add_command(cmd_unmonitor)
         self.add_command(cmd_monitored)
+        self.add_command(cmd_monitorall)
         self.add_command(cmd_clear)
+        self.add_command(cmd_config)
         self.add_command(cmd_help_welcome)
 
     async def on_ready(self) -> None:
@@ -115,10 +165,12 @@ class WelcomeBot(commands.Bot):
             logger.error(f"Failed to fetch notification channel: {e}")
 
         # Log monitoring status
-        if self._monitored_guilds:
+        if self._monitor_all:
+            logger.info(f"Monitoring ALL guilds ({len(self.guilds)} servers)")
+        elif self._monitored_guilds:
             logger.info(f"Monitoring {len(self._monitored_guilds)} specific guild(s)")
         else:
-            logger.info("Not monitoring any guilds (use !monitor <guild_id> to add)")
+            logger.info("Not monitoring any guilds (use !monitor <guild_id> or !monitorall)")
 
     async def on_member_join(self, member: discord.Member) -> None:
         """Called when a member joins a guild."""
@@ -270,9 +322,13 @@ async def cmd_monitored(ctx: commands.Context) -> None:  # type: ignore
     """List all monitored servers."""
     bot: WelcomeBot = ctx.bot  # type: ignore
 
+    if bot.monitor_all:
+        await ctx.send(f"**Monitoring ALL servers** ({len(bot.guilds)} servers)")
+        return
+
     if not bot.monitored_guilds:
         await ctx.send(
-            "No servers configured. **Monitoring nothing.** Use `!monitor <guild_id>` to add servers."
+            "No servers configured. **Monitoring nothing.** Use `!monitor <guild_id>` or `!monitorall` to start."
         )
         return
 
@@ -288,10 +344,42 @@ async def cmd_monitored(ctx: commands.Context) -> None:  # type: ignore
 
 @commands.command(name="clear")
 async def cmd_clear(ctx: commands.Context) -> None:  # type: ignore
-    """Clear monitored list (will monitor nothing)."""
+    """Clear monitored list and disable monitor all."""
     bot: WelcomeBot = ctx.bot  # type: ignore
     bot.clear_monitored_guilds()
     await ctx.send("Cleared monitored list. **Now monitoring nothing.**")
+
+
+@commands.command(name="monitorall")
+async def cmd_monitorall(ctx: commands.Context) -> None:  # type: ignore
+    """Monitor all servers."""
+    bot: WelcomeBot = ctx.bot  # type: ignore
+    bot.set_monitor_all(True)
+    await ctx.send(f"**Now monitoring ALL servers** ({len(bot.guilds)} servers)")
+
+
+@commands.command(name="config")
+async def cmd_config(ctx: commands.Context) -> None:  # type: ignore
+    """Show current configuration."""
+    bot: WelcomeBot = ctx.bot  # type: ignore
+
+    monitor_status = (
+        f"**ALL servers** ({len(bot.guilds)})"
+        if bot.monitor_all
+        else f"**{len(bot.monitored_guilds)} specific server(s)**"
+        if bot.monitored_guilds
+        else "**Nothing**"
+    )
+
+    config_text = f"""**Current Configuration**
+
+**Monitoring:** {monitor_status}
+**Command Prefix:** `{settings.command_prefix}`
+**Notification Channel:** `{settings.notification_channel_id}`
+**Data Directory:** `{settings.data_dir}`
+**Connected Servers:** {len(bot.guilds)}"""
+
+    await ctx.send(config_text)
 
 
 @commands.command(name="whelp")
@@ -301,13 +389,18 @@ async def cmd_help_welcome(ctx: commands.Context) -> None:  # type: ignore
 
     help_text = f"""**Welcome Bot Commands**
 
-`{prefix}servers` - List all servers the bot is in
-`{prefix}monitor <guild_id>` - Add a server to the monitored list
-`{prefix}unmonitor <guild_id>` - Remove a server from the monitored list
-`{prefix}monitored` - List all monitored servers
-`{prefix}clear` - Clear monitored list (monitor nothing)
+**Monitoring:**
+`{prefix}servers` - List all servers with monitoring status
+`{prefix}monitor <guild_id>` - Monitor a specific server
+`{prefix}unmonitor <guild_id>` - Stop monitoring a server
+`{prefix}monitorall` - Monitor ALL servers
+`{prefix}monitored` - List currently monitored servers
+`{prefix}clear` - Stop monitoring everything
+
+**Info:**
+`{prefix}config` - Show current configuration
 `{prefix}whelp` - Show this help message
 
-_By default, no servers are monitored. Use `{prefix}monitor` to add servers._"""
+_By default, no servers are monitored. Use `{prefix}monitor` or `{prefix}monitorall` to start._"""
 
     await ctx.send(help_text)
