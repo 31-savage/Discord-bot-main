@@ -20,6 +20,7 @@ class WelcomeBot(discord.Client):
             # Chunk guilds at startup to get full member list
             chunk_guilds_at_startup=True,
         )
+        self._dm_channel: discord.DMChannel | None = None
 
     async def on_ready(self) -> None:
         """Called when the bot is ready and connected."""
@@ -30,27 +31,14 @@ class WelcomeBot(discord.Client):
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         logger.info(f"Connected to {len(self.guilds)} guild(s)")
 
-        # Subscribe to member events for all guilds if enabled
-        if settings.subscribe_to_member_events:
-            await self._subscribe_to_guilds()
-
-    async def _subscribe_to_guilds(self) -> None:
-        """Subscribe to member events for all guilds.
-
-        This is important for receiving on_member_join events.
-        See: https://discordpy-self.readthedocs.io/en/latest/guild_subscriptions.html
-        """
-        for guild in self.guilds:
-            try:
-                # Subscribe to the guild with member events enabled
-                await guild.subscribe(
-                    typing=False,
-                    threads=False,
-                    member_updates=True,  # Required for on_member_join
-                )
-                logger.debug(f"Subscribed to member events for guild: {guild.name}")
-            except Exception as e:
-                logger.warning(f"Failed to subscribe to guild {guild.name}: {e}")
+        # Create DM channel to self for notifications
+        # We need to fetch ourselves as a User (not ClientUser) to create DM
+        try:
+            user = await self.fetch_user(self.user.id)
+            self._dm_channel = await user.create_dm()
+            logger.info("DM channel to self created successfully")
+        except Exception as e:
+            logger.error(f"Failed to create DM channel to self: {e}")
 
     async def on_member_join(self, member: discord.Member) -> None:
         """Called when a member joins a guild.
@@ -61,16 +49,15 @@ class WelcomeBot(discord.Client):
         logger.info(f"New member joined: {member} in {member.guild.name}")
 
         try:
-            # Send DM to myself (bot account) with user info
-            if self.user is None:
-                logger.error("Bot user is None, cannot send DM")
+            if self._dm_channel is None:
+                logger.error("DM channel not available, cannot send notification")
                 return
 
             embed = self._create_join_notification_embed(member)
-            await self.user.send(embed=embed)
+            await self._dm_channel.send(embed=embed)
             logger.debug(f"Join notification sent to self for {member}")
         except discord.Forbidden:
-            logger.error("Cannot send DM to self")
+            logger.error("Cannot send DM to self - forbidden")
         except Exception as e:
             logger.error(f"Error sending join notification: {e}")
 
@@ -92,7 +79,7 @@ class WelcomeBot(discord.Client):
         account_age = now - account_created
 
         embed = discord.Embed(
-            title="🔔 New Member Joined",
+            title="New Member Joined",
             description=f"A new user has joined **{guild.name}**",
             color=discord.Color.green(),
             timestamp=now,
@@ -123,7 +110,7 @@ class WelcomeBot(discord.Client):
         # Add account age warning for very new accounts (< 7 days)
         if account_age.days < 7:
             embed.add_field(
-                name="⚠️ Warning",
+                name="Warning",
                 value=f"New account - only {account_age.days} day(s) old!",
                 inline=False,
             )
@@ -137,19 +124,5 @@ class WelcomeBot(discord.Client):
         return embed
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
-        """Called when the user joins a new guild.
-
-        Subscribe to member events for the new guild.
-        """
+        """Called when the user joins a new guild."""
         logger.info(f"Joined new guild: {guild.name}")
-
-        if settings.subscribe_to_member_events:
-            try:
-                await guild.subscribe(
-                    typing=False,
-                    threads=False,
-                    member_updates=True,
-                )
-                logger.debug(f"Subscribed to member events for new guild: {guild.name}")
-            except Exception as e:
-                logger.warning(f"Failed to subscribe to new guild {guild.name}: {e}")
