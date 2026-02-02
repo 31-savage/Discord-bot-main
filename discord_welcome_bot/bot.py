@@ -132,17 +132,16 @@ class WelcomeBot(commands.Bot):
                 logger.error("Notification channel not available")
                 return
 
-            embed = self._create_join_notification_embed(member)
-            # discord.py-self uses embeds=[list] not embed=single
-            await self._notification_channel.send(embeds=[embed])
+            message = self._create_join_notification_text(member)
+            await self._notification_channel.send(message)
             logger.debug(f"Join notification sent for {member}")
         except discord.Forbidden:
             logger.error("Cannot send to notification channel - forbidden")
         except Exception as e:
             logger.error(f"Error sending join notification: {e}")
 
-    def _create_join_notification_embed(self, member: discord.Member) -> discord.Embed:
-        """Create a notification embed with user info for a new member."""
+    def _create_join_notification_text(self, member: discord.Member) -> str:
+        """Create a plain text notification for a new member."""
         guild = member.guild
         member_count = guild.member_count or len(guild.members)
 
@@ -150,45 +149,25 @@ class WelcomeBot(commands.Bot):
         now = datetime.now(timezone.utc)
         account_age = now - account_created
 
-        embed = discord.Embed(
-            title="New Member Joined",
-            description=f"A new user has joined **{guild.name}**",
-            color=discord.Color.green(),
-            timestamp=now,
-        )
-
-        if member.avatar:
-            embed.set_thumbnail(url=member.avatar.url)
-        elif member.default_avatar:
-            embed.set_thumbnail(url=member.default_avatar.url)
-
-        embed.add_field(name="Username", value=str(member), inline=True)
-        embed.add_field(name="User ID", value=str(member.id), inline=True)
-        embed.add_field(name="Mention", value=member.mention, inline=True)
-        embed.add_field(name="Server", value=guild.name, inline=True)
-        embed.add_field(name="Member #", value=str(member_count), inline=True)
-        embed.add_field(
-            name="Account Created",
-            value=f"<t:{int(account_created.timestamp())}:F>\n(<t:{int(account_created.timestamp())}:R>)",
-            inline=True,
-        )
-
         age_str = f"{account_age.days} days, {account_age.seconds // 3600} hours"
-        embed.add_field(name="Account Age", value=age_str, inline=True)
 
+        # Build warning if new account
+        warning = ""
         if account_age.days < 7:
-            embed.add_field(
-                name="Warning",
-                value=f"New account - only {account_age.days} day(s) old!",
-                inline=False,
-            )
+            warning = f"\n:warning: **Warning:** New account - only {account_age.days} day(s) old!"
 
-        if guild.icon:
-            embed.set_footer(text=f"Server ID: {guild.id}", icon_url=guild.icon.url)
-        else:
-            embed.set_footer(text=f"Server ID: {guild.id}")
+        message = f"""**New Member Joined**
 
-        return embed
+**Server:** {guild.name}
+**Username:** {member} ({member.mention})
+**User ID:** `{member.id}`
+**Member #:** {member_count}
+**Account Created:** <t:{int(account_created.timestamp())}:F> (<t:{int(account_created.timestamp())}:R>)
+**Account Age:** {age_str}{warning}
+
+_Server ID: `{guild.id}`_"""
+
+        return message
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Called when the user joins a new guild."""
@@ -196,17 +175,12 @@ class WelcomeBot(commands.Bot):
 
         if self._notification_channel:
             try:
-                embed = discord.Embed(
-                    title="Joined New Server",
-                    description=f"You joined **{guild.name}**",
-                    color=discord.Color.blue(),
-                    timestamp=datetime.now(timezone.utc),
-                )
-                embed.add_field(name="Server ID", value=str(guild.id), inline=True)
-                embed.add_field(name="Members", value=str(guild.member_count), inline=True)
-                if guild.icon:
-                    embed.set_thumbnail(url=guild.icon.url)
-                await self._notification_channel.send(embeds=[embed])
+                message = f"""**Joined New Server**
+
+**Server:** {guild.name}
+**Server ID:** `{guild.id}`
+**Members:** {guild.member_count}"""
+                await self._notification_channel.send(message)
             except Exception as e:
                 logger.error(f"Failed to send guild join notification: {e}")
 
