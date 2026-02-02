@@ -3,7 +3,6 @@
 import json
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 
 import discord
 from discord.ext import commands
@@ -12,8 +11,8 @@ from discord_welcome_bot.config import settings
 
 logger = logging.getLogger(__name__)
 
-# File to persist monitored guilds
-DATA_FILE = Path("monitored_guilds.json")
+# File to persist monitored guilds (uses configurable data directory)
+DATA_FILE = settings.data_dir / "monitored_guilds.json"
 
 
 def load_monitored_guilds() -> set[int]:
@@ -31,8 +30,11 @@ def load_monitored_guilds() -> set[int]:
 def save_monitored_guilds(guild_ids: set[int]) -> None:
     """Save monitored guild IDs to file."""
     try:
+        # Ensure the data directory exists
+        DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(DATA_FILE, "w") as f:
             json.dump({"guild_ids": list(guild_ids)}, f)
+        logger.debug(f"Saved monitored guilds to {DATA_FILE}")
     except Exception as e:
         logger.error(f"Failed to save monitored guilds: {e}")
 

@@ -10,7 +10,7 @@ A Discord self-bot using [discord.py-self](https://github.com/dolfies/discord.py
 - Shows member count, username, avatar, and account age
 - Warns about new accounts (< 7 days old)
 - **Commands** to manage which servers to monitor
-- By default monitors ALL servers (or specific ones you configure)
+- By default monitors NOTHING (opt-in per server)
 - Docker support for easy deployment
 
 ## Commands
@@ -21,7 +21,7 @@ A Discord self-bot using [discord.py-self](https://github.com/dolfies/discord.py
 | `!monitor <guild_id>` | Add a server to the monitored list |
 | `!unmonitor <guild_id>` | Remove a server from the monitored list |
 | `!monitored` | List all monitored servers |
-| `!clear` | Clear monitored list (monitor ALL servers) |
+| `!clear` | Clear monitored list (monitor nothing) |
 | `!whelp` | Show help for all commands |
 
 ## Prerequisites
@@ -72,6 +72,7 @@ cp .env.example .env
 | `NOTIFICATION_CHANNEL_ID` | Yes | Group DM channel ID for notifications |
 | `LOG_LEVEL` | No | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`) |
 | `COMMAND_PREFIX` | No | Prefix for commands (default: `!`) |
+| `DATA_DIR` | No | Directory for persistent data (default: `.`) |
 
 ## Running Locally
 
@@ -128,6 +129,18 @@ docker run -d \
    - `NOTIFICATION_CHANNEL_ID`
 3. Deploy
 
+#### Persistent Storage on Railway
+
+To persist your monitored servers list across restarts:
+
+1. In your Railway project, press `Cmd+K` (or `Ctrl+K`) and select "Create Volume"
+2. Connect the volume to your service
+3. Set the mount path to `/app/data`
+4. Add environment variable: `DATA_DIR=/app/data`
+5. Redeploy
+
+Your `monitored_guilds.json` will now persist across restarts.
+
 ### Fly.io
 
 ```bash
@@ -156,9 +169,10 @@ fly deploy
 
 1. Bot connects to Discord using your user token
 2. Notifications are sent to your configured group DM
-3. By default, ALL servers are monitored
-4. Use `!monitor` and `!unmonitor` commands to control which servers to watch
-5. Monitored server list is persisted to `monitored_guilds.json`
+3. By default, NO servers are monitored (opt-in)
+4. Use `!monitor <guild_id>` to start monitoring a server
+5. Use `!unmonitor <guild_id>` to stop monitoring
+6. Monitored server list is persisted to `monitored_guilds.json`
 
 ## Development
 

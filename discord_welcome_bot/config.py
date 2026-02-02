@@ -1,5 +1,6 @@
 """Discord Welcome Bot - Configuration settings."""
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,6 +27,10 @@ class Settings(BaseSettings):
 
     # Command prefix for text commands
     command_prefix: str = "!"
+
+    # Data directory for persistent storage (e.g., monitored guilds)
+    # On Railway, mount a volume to /app/data and set DATA_DIR=/app/data
+    data_dir: Path = Path(".")
 
 
 settings = Settings()  # type: ignore[call-arg]
